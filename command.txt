@@ -1,0 +1,11 @@
+
+bison -d parser.y
+ flex scanner.l
+make
+
+
+
+./json2relcsv sample.json --out-dir ./output_directory
+
+./json2relcsv sample.json --print-ast
+
