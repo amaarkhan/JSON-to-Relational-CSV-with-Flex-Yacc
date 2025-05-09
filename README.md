@@ -129,42 +129,75 @@ This project converts JSON data into relational CSV files, grouping objects into
 
 ---
 
+
 ## Example Input and Output
 
-### **Input (`sample.json`)**
+### **Example 1**
+#### **Input**
+```json
+{ "id": 1, "name": "Ali", "age": 19 }
+```
+
+#### **Output**
+1. **`table1.csv`**
+   ```
+   id,name,age
+   1,Ali,19
+   ```
+
+---
+
+### **Example 2**
+#### **Input**
 ```json
 {
-    "postId": 101,
-    "author": {"uid": "u1", "name": "Sara"},
-    "comments": [
-        {"uid": "u2", "text": "Nice!"},
-        {"uid": "u3", "text": "+1"}
+    "movie": "Inception",
+    "genres": ["Action", "Sci-Fi", "Thriller"]
+}
+```
+
+#### **Output**
+1. **`table1.csv`**
+   ```
+   id,movie
+   1,Inception
+   ```
+
+2. **`movie.csv`**
+   ```
+   movie_id,index,value
+   1,0,Action
+   1,1,Sci-Fi
+   1,2,Thriller
+   ```
+
+---
+
+### **Example 3**
+#### **Input**
+```json
+{
+    "orderId": 7,
+    "items": [
+        {"sku": "X1", "qty": 2},
+        {"sku": "Y9", "qty": 1}
     ]
 }
 ```
 
-### **Output**
-1. **`posts.csv`**
+#### **Output**
+1. **`table1.csv`**
    ```
-   id,postId,author_id
-   1,101,1
-   ```
-
-2. **`users.csv`**
-   ```
-   id,uid,name
-   1,u1,Sara
-   2,u2,
-   3,u3,
+   id,orderId
+   1,7
    ```
 
-3. **`comments.csv`**
+2. **`table2.csv`**
    ```
-   post_id,seq,user_id,text
-   1,0,2,"Nice!"
-   1,1,3,"+1"
+   order_id,seq,sku,qty
+   1,0,X1,2
+   1,1,Y9,1
    ```
-
 ---
 
 ## Known Limitations
