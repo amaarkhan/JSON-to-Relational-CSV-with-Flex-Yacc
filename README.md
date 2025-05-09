@@ -183,6 +183,7 @@ This project converts JSON data into relational CSV files, grouping objects into
         {"sku": "Y9", "qty": 1}
     ]
 }
+
 ```
 
 #### **Output**
@@ -198,7 +199,34 @@ This project converts JSON data into relational CSV files, grouping objects into
    1,0,X1,2
    1,1,Y9,1
    ```
+### **Example 4**
+#### **Input**
+```json
+{
+    "userId": 42,
+    "profile": {
+        "username": "john_doe",
+        "email": "john@example.com"
+    },
+    "posts": [
+        {"title": "First Post", "likes": 10},
+        {"title": "Second Post", "likes": 25}
+    ]
+}
+#### **Output**
+1. **`table1.csv`**
+   ```
+   
+   1,42
+   ```
+
+2. **`table2.csv`**
+   ```
+   1,john_doe,john@example.com
 ---
+3 ** table3.csv **
+   1,First Post,10
+   1,Second Post,25
 
 ## Known Limitations
 - Memory allocation errors are not fully handled in all cases.
