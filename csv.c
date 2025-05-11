@@ -42,50 +42,68 @@ void escape_csv_string(FILE *file, const char *str) {
     putc('"', file);
 }
 
-
 void write_csv_header(FILE *file, Schema *schema) {
     fprintf(file, "id"); // Primary key column
 
-    // Add schema-defined columns
     for (int i = 0; i < schema->num_columns; i++) {
         fprintf(file, ",%s", schema->columns[i]);
     }
 
-    // Add parent foreign key column if applicable
     if (schema->parent_id_column) {
         fprintf(file, ",%s", schema->parent_id_column);
     }
 
-    // Add junction table-specific columns if applicable
     if (schema->is_junction_table) {
         fprintf(file, ",index,value");
     }
 
     fprintf(file, "\n");
 }
+
+void add_seq_to_object(ASTNode *object, int seq) {
+    if (!object || object->node_type != OBJECT_NODE) return;
+
+    ASTNode *seq_node = malloc(sizeof(ASTNode));
+    if (!seq_node) return;
+    seq_node->node_type = NUMBER_NODE;
+    seq_node->number_value = seq;
+    seq_node->next = NULL;
+
+    ASTNode *pair_node = malloc(sizeof(ASTNode));
+    if (!pair_node) {
+        free(seq_node);
+        return;
+    }
+
+    pair_node->node_type = PAIR_NODE;
+    pair_node->key = strdup("seq");
+    pair_node->children = seq_node;
+    pair_node->next = object->children;
+
+    object->children = pair_node;
+}
+
 int write_object_to_csv(ASTNode *object, Schema *schema, int parent_id, const char *out_dir) {
     static int next_id = 1;
+    if (!object || !schema) return -1;
+
     int current_id = next_id++;
 
-    // Open or create the CSV file
     char filename[256];
     snprintf(filename, sizeof(filename), "%s/%s.csv", out_dir, schema->name);
 
     FILE *file = fopen(filename, "a");
     if (!file) {
-        // File doesn't exist, create it with header
         file = fopen(filename, "w");
         if (!file) {
             perror("Failed to open CSV file");
             exit(1);
         }
-        write_csv_header(file, schema); // Write column names
+        write_csv_header(file, schema);
     }
 
-    // Write the row
-    fprintf(file, "%d", current_id); // Write the primary key
+    fprintf(file, "%d", current_id);
 
-    // Write regular columns
     for (int i = 0; i < schema->num_columns; i++) {
         ASTNode *pair = find_pair_in_object(object, schema->columns[i]);
         fprintf(file, ",");
@@ -102,16 +120,13 @@ int write_object_to_csv(ASTNode *object, Schema *schema, int parent_id, const ch
                     fprintf(file, "%s", pair->children->boolean_value ? "true" : "false");
                     break;
                 case NULL_NODE:
-                    // Leave empty for NULL
                     break;
                 default:
-                    // Shouldn't happen for simple values
                     break;
             }
         }
     }
 
-    // Write parent ID if this is a child table
     if (schema->parent_id_column && parent_id > 0) {
         fprintf(file, ",%d", parent_id);
     }
@@ -119,26 +134,53 @@ int write_object_to_csv(ASTNode *object, Schema *schema, int parent_id, const ch
     fprintf(file, "\n");
     fclose(file);
 
-    // Process nested objects and arrays
     ASTNode *pair = object->children;
     while (pair) {
         if (pair->node_type == PAIR_NODE && pair->children) {
-            if (pair->children->node_type == OBJECT_NODE) {
-                // Handle nested object (e.g., "profile")
-                Schema *nested_schema = get_schema_for_object(pair->children);
-                write_object_to_csv(pair->children, nested_schema, current_id, out_dir);
-            } else if (pair->children->node_type == ARRAY_NODE) {
-                // Handle array (e.g., "posts")
-                ASTNode *array = pair->children;
-                ASTNode *element = array->children;
+            ASTNode *child = pair->children;
+
+            if (child->node_type == OBJECT_NODE) {
+                Schema *nested_schema = get_schema_for_object(child);
+                if (nested_schema) {
+                    write_object_to_csv(child, nested_schema, current_id, out_dir);
+                }
+            }
+            else if (child->node_type == ARRAY_NODE) {
+                ASTNode *element = child->children;
+                int index = 0;
 
                 while (element) {
+                    ASTNode *next_element = element->next;
+
                     if (element->node_type == OBJECT_NODE) {
-                        // Array of objects - child table
-                        Schema *child_schema = get_schema_for_object(element);
-                        write_object_to_csv(element, child_schema, current_id, out_dir);
+                        add_seq_to_object(element, index);
+                        Schema *nested_schema = get_schema_for_object(element);
+                        if (nested_schema) {
+                            write_object_to_csv(element, nested_schema, current_id, out_dir);
+                        }
                     }
-                    element = element->next;
+                    else if (element->node_type == STRING_NODE) {
+                        char array_filename[256];
+                        snprintf(array_filename, sizeof(array_filename), "%s/%s.csv", out_dir, pair->key);
+
+                        FILE *array_file = fopen(array_filename, "a");
+                        if (!array_file) {
+                            array_file = fopen(array_filename, "w");
+                            if (!array_file) {
+                                perror("Failed to open CSV file for scalar array");
+                                exit(1);
+                            }
+                            fprintf(array_file, "parent_id,index,value\n");
+                        }
+
+                        fprintf(array_file, "%d,%d,", current_id, index);
+                        escape_csv_string(array_file, element->string_value);
+                        fprintf(array_file, "\n");
+                        fclose(array_file);
+                    }
+
+                    element = next_element;
+                    index++;
                 }
             }
         }
@@ -146,18 +188,32 @@ int write_object_to_csv(ASTNode *object, Schema *schema, int parent_id, const ch
         pair = pair->next;
     }
 
-    return current_id; // Return the ID of the current row
+    return current_id;
 }
 
 void generate_csv(ASTNode *root, const char *out_dir) {
-    // Create output directory if it doesn't exist
+    if (!root || root->node_type != OBJECT_NODE) {
+        fprintf(stderr, "Invalid root node.\n");
+        return;
+    }
+
     struct stat st = {0};
     if (stat(out_dir, &st) == -1) {
         mkdir(out_dir, 0755);
     }
-    
-    if (root->node_type == OBJECT_NODE) {
-        Schema *schema = get_schema_for_object(root);
-        write_object_to_csv(root, schema, 0, out_dir);
+
+    Schema *schema = get_schema_for_object(root);
+    if (!schema) {
+        fprintf(stderr, "Schema not found for root object.\n");
+        return;
+    }
+
+    write_object_to_csv(root, schema, 0, out_dir);
+}
+void free_csv_table(CSVTable *table) {
+    if (table) {
+        if (table->file) fclose(table->file);
+        free(table->name);
+        free(table);
     }
 }
